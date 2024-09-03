@@ -96,17 +96,17 @@ void setup()
     }
 
     // loop dialtone until interrupted by dialing
-    start_playing(DIALTONE_FILENAME, true);
+    // start_playing(DIALTONE_FILENAME, true);
 }
 
 void loop() {
-    if (AudioPlayer.is_playing() && AudioPlayer.ready()) {
-        tick();
-    } else if (!AudioPlayer.is_playing() && audio_tracks > 0) {
-        start_playing(audio_queue[audio_index].filename, audio_queue[audio_index].loop);
-        audio_index = (audio_index + 1) % MAX_QUEUE_LEN;
-        audio_tracks--;
-    }
+    // if (AudioPlayer.is_playing() && AudioPlayer.ready()) {
+    //     tick();
+    // } else if (!AudioPlayer.is_playing() && audio_tracks > 0) {
+    //     start_playing(audio_queue[audio_index].filename, audio_queue[audio_index].loop);
+    //     audio_index = (audio_index + 1) % MAX_QUEUE_LEN;
+    //     audio_tracks--;
+    // }
 
     uint32_t dialed_number;
     if (Dialer.check_dialed(&dialed_number))
@@ -114,14 +114,13 @@ void loop() {
         cout << F("Dialed: ") << dialed_number << endl;
         number_filename[dial_index++] = (char)('0' + (dialed_number % 10));
 
-        stop();
+        // stop();
 
         if (dial_index == 2) {
             dial_index = 0;
-
-            enqueue(RING_FILENAME, false);
-            enqueue(number_filename, false);
-            enqueue(DIALTONE_FILENAME, true);
+            // enqueue(RING_FILENAME, false);
+            // enqueue(number_filename, false);
+            // enqueue(DIALTONE_FILENAME, true);
         }
     }
 }

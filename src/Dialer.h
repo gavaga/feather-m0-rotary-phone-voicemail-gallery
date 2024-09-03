@@ -14,13 +14,13 @@ public:
 private:
     DialerClass();
 
-    static void _static_handle_interrupt();
-    void _handle_interrupt();
+    void _check_change();
 
     uint32_t _pin;
-    volatile bool _is_up = false;
-    volatile uint8_t _ticks = 0;
-    volatile uint64_t _last_tick_time = 0, _last_fall_time = 0;
+    uint32_t _last_val = HIGH;
+    bool _is_up = true;
+    uint8_t _ticks = 0;
+    uint64_t _last_tick_time = 0, _last_fall_time = 0;
 };
 
 extern DialerClass &Dialer; 
