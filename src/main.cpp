@@ -20,9 +20,11 @@ void fatal(const char *message, uint8_t r, uint8_t g, uint8_t b, uint16_t blink_
 
 void initSD();
 
+void enqueue(const char *filename, bool loop);
 void play(const char *filename);
 void start_playing(const char *filename, bool loop);
 bool tick();
+void stop();
 
 // DEFINITIONS
 #define CPU_HZ 48000000
@@ -48,12 +50,21 @@ WavePlayer player(SD_SECTOR_SIZE *NUM_SECTORS);
 SdFs sd;
 FsFile file;
 
-int32_t dial_index = 0;
-const char *dialtone_filename = "dialtone.wav";
-const char *ring_filename = "ring.wav";
-const char *ring_special = "ringremix.wav";
+const char *DIALTONE_FILENAME = "dialtone.wav";
+const char *RING_FILENAME = "ring.wav";
+const char *RING_REMIX_FILENAME = "ringremix.wav";
 
+int32_t dial_index = 0;
 char number_filename[7] = "00.WAV";
+
+typedef struct {
+    const char *filename;
+    bool loop;
+} AudioQueueItem;
+
+const uint32_t MAX_QUEUE_LEN = 3;
+uint32_t audio_index, audio_tracks;
+AudioQueueItem audio_queue[3];
 
 // ------------------------------------------------------------------------------
 void setup()
@@ -85,13 +96,16 @@ void setup()
     }
 
     // loop dialtone until interrupted by dialing
-    start_playing(dialtone_filename, true);
+    start_playing(DIALTONE_FILENAME, true);
 }
 
 void loop() {
-    if (AudioPlayer.is_playing() && AudioPlayer.ready())
-    {
+    if (AudioPlayer.is_playing() && AudioPlayer.ready()) {
         tick();
+    } else if (!AudioPlayer.is_playing() && audio_tracks > 0) {
+        start_playing(audio_queue[audio_index].filename, audio_queue[audio_index].loop);
+        audio_index = (audio_index + 1) % MAX_QUEUE_LEN;
+        audio_tracks--;
     }
 
     uint32_t dialed_number;
@@ -100,12 +114,14 @@ void loop() {
         cout << F("Dialed: ") << dialed_number << endl;
         number_filename[dial_index++] = (char)('0' + (dialed_number % 10));
 
-        AudioPlayer.stop();
+        stop();
 
-        if (dial_index == 2)
-        {
+        if (dial_index == 2) {
             dial_index = 0;
-            start_playing(number_filename, false);
+
+            enqueue(RING_FILENAME, false);
+            enqueue(number_filename, false);
+            enqueue(DIALTONE_FILENAME, true);
         }
     }
 }
@@ -125,6 +141,18 @@ void play(const char *filename, bool loop)
             cout << F("Finished playback") << endl;
             break;
         }
+    }
+}
+
+void enqueue(const char *filename, bool loop) {
+    audio_queue[audio_index + audio_tracks] = { 
+        filename,
+        loop
+    };
+    audio_tracks++;
+
+    if (audio_tracks > MAX_QUEUE_LEN) {
+        fatal("Too many audio tracks enqueued", 255, 0, 0, 500);
     }
 }
 
@@ -180,6 +208,12 @@ bool tick()
     AudioPlayer.enqueue(samples, num_samples);
 
     return num_samples > 0;
+}
+
+void stop() {
+    AudioPlayer.stop();
+    audio_index = 0;
+    audio_tracks = 0;
 }
 
 //------------------------------------------------------------------------------
