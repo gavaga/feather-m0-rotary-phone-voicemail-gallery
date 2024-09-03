@@ -11,6 +11,8 @@
 #include "io.h"
 #include "WavePlayer.h"
 
+#include "Dialer.h"
+
 // DECLARATIONS
 void fatal(const char *message, uint8_t r, uint8_t g, uint8_t b, uint16_t blink_delay);
 
@@ -31,7 +33,6 @@ void play(const char *filename);
 #define SAMPLE_RATE   44100
 
 #define GREEN_LED_BUILTIN 8
-#define TICKER_PIN    A1
 
 #define DAC_BITS      10
 #define DAC_CENTER    512
@@ -42,6 +43,8 @@ void play(const char *filename);
 
 #define NUM_SECTORS         4
 #define SD_READ_CHUNK_SIZE  (NUM_SECTORS * SD_SECTOR_SIZE)
+
+#define DIALER_PIN A1
 
 // GLOBALS 
 // Adafruit_NeoPixel neopixel_err(1, NEOPIXEL_BUILTIN, NEO_GRB + NEO_KHZ800);
@@ -79,41 +82,8 @@ volatile bool rx_is_done = false, tx_is_done = false;
 volatile uint8_t num_rx_blocks = 0;
 volatile uint8_t dac_block_idx = 0;
 
-volatile uint8_t ticks = 0;
-volatile uint64_t last_tick_time = 0;
-volatile uint64_t last_fall_time = 0;
-volatile bool up = false;
-
 volatile bool stop_playing = false;
 volatile bool is_playing = true;
-
-#define PULSE_TIMEOUT 350000
-#define PULSE_WIDTH_MIN 30000
-#define PULSE_WIDTH_MAX 90000
-
-void ticker_interrupt() {
-  uint32_t val = digitalRead(TICKER_PIN);
-  
-  // falling
-  if (up && val == LOW) {
-    last_fall_time = micros();
-  }
-
-  // set the latest rise time
-  else if (!up && val == HIGH) {
-    uint64_t time = micros();
-    uint64_t pulse_width = time - last_fall_time;
-    if (pulse_width > PULSE_WIDTH_MIN 
-      && pulse_width < PULSE_WIDTH_MAX
-    ) {
-      stop_playing = true;
-      last_tick_time = time;
-      ticks++;
-    }
-  }
-
-  up = val == HIGH;
-}
 
 // ------------------------------------------------------------------------------
 void setup() {
@@ -124,9 +94,7 @@ void setup() {
   // neopixel_err.clear();
   // neopixel_err.show();
 
-  // configure ticker
-  pinMode(TICKER_PIN, INPUT);
-  attachInterrupt(TICKER_PIN, ticker_interrupt, CHANGE);
+  Dialer.init(DIALER_PIN);
 
   // configure serial
   Serial.begin(115200);
@@ -149,10 +117,13 @@ void loop() {
     tick();
   }
 
-  if (last_tick_time > 0 && ticks > 0 && micros() - last_tick_time > PULSE_TIMEOUT) {
-    cout << F("Dialed: ") << (uint32_t)ticks << endl;
-    number_filename[dial_index++] = (char)('0' + (ticks % 10));
-    ticks = 0;
+  uint32_t dialed_number;
+  if (Dialer.check_dialed(&dialed_number)) {
+    cout << F("Dialed: ") << dialed_number << endl;
+    number_filename[dial_index++] = (char)('0' + (dialed_number % 10));
+    
+    // interrupt any current playback
+    stop_playing = true;
 
     if (dial_index == 2) {
       dial_index = 0;
