@@ -8,7 +8,7 @@ public:
     static DialerClass& getInstance();
     DialerClass(DialerClass&) = delete;
 
-    void init(uint32_t pin);
+    bool init(uint32_t pin);
     bool check_dialed(uint32_t* number);
 
 private:

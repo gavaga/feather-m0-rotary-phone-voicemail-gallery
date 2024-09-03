@@ -1,4 +1,6 @@
 #include <Arduino.h>
+
+#include "io.h"
 #include "Dialer.h"
 
 #define PULSE_TIMEOUT 350000
@@ -12,10 +14,14 @@ DialerClass& DialerClass::getInstance() {
 
 DialerClass::DialerClass() {}
 
-void DialerClass::init(uint32_t pin) {
+bool DialerClass::init(uint32_t pin) {
     _pin = pin;
     pinMode(_pin, INPUT);
     attachInterrupt(_pin, DialerClass::_static_handle_interrupt, CHANGE);
+
+    cout << F("Dialer initialized on pin ") << pin << endl;
+
+    return true;
 }
 
 bool DialerClass::check_dialed(uint32_t *number) {
