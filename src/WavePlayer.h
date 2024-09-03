@@ -63,7 +63,7 @@ public:
     bool init();
 
     // load a WAV and load its first chunk of data
-    bool start(SdFs* sd, FsFile* file, int16_t **samples, uint32_t *num_samples);
+    bool start(SdFs* sd, FsFile* file, bool loop, int16_t **samples, uint32_t *num_samples);
 
     /** Do a DMA-based read and simultaneous conversion of the next chunk of data. */
     bool read_and_convert(int16_t **samples, uint32_t *num_samples);
@@ -104,6 +104,7 @@ private:
     bool _contiguous;
     // current file position (in sectors)
     int32_t _sector_index;
+    bool _loop;
 
 #if USE_DMA
     /* Wave player uses 2 DMA channels, one for TX and one for RX */

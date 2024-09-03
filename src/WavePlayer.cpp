@@ -78,7 +78,7 @@ typedef struct {
     uint32_t data_size;
 } WaveFileHeader __attribute__ ((packed));
 
-bool WavePlayer::start(SdFs *sd, FsFile *file, int16_t **samples, uint32_t *num_samples) {
+bool WavePlayer::start(SdFs *sd, FsFile *file, bool loop, int16_t **samples, uint32_t *num_samples) {
     if (!file->isOpen()) {
         cout << F("WavePlayer: Cannot start file that is not open!") << endl;
         return false;
@@ -91,6 +91,7 @@ bool WavePlayer::start(SdFs *sd, FsFile *file, int16_t **samples, uint32_t *num_
 
     _sd = sd;
     _file = file;
+    _loop = loop;
     _sector_index = 0;
 
     // check if the file is contiguous
@@ -207,6 +208,14 @@ void WavePlayer::_swap_buffers() {
     _dma_rx_bufs[1] = tmp;
 }
 
+uint32_t clusterStartSector(SdFat32* fat, uint32_t cluster) {
+    return fat->dataStartSector() + ((cluster - 2) << fat->sectorsPerClusterShift()); 
+}
+
+uint32_t clusterOfSector(SdFat32* fat, uint32_t sector) {
+    return 2 + ((sector - fat->dataStartSector()) >> fat->sectorsPerClusterShift());
+}
+
 void WavePlayer::_get_next_chunk(uint32_t *sector_out, uint32_t *num_sectors_out) {
     if (_contiguous) {
         // if the WHOLE file is contiguous, we can just calculate based on sector indices
@@ -218,18 +227,30 @@ void WavePlayer::_get_next_chunk(uint32_t *sector_out, uint32_t *num_sectors_out
     } 
     else {
         // if the file is NOT contiguous, we can only use 
+        uint32_t first_sector = _file->firstSector();
         uint32_t sec_per_cluster = _sd->sectorsPerCluster();
-        // # of clusters to advance
-        uint32_t numClusters = (_sector_index + sec_per_cluster - 1) / sec_per_cluster;
 
-        _file->seekSet(_sector_index * SD_SECTOR_SIZE);
-        uint32_t curCluster = _file->curCluster();
+        if (_sd->fatType() == FAT_TYPE_FAT32) {
+            SdFat32 *sdfat = (SdFat32*)_sd;
 
-        cout << F("Got next cluster ") << curCluster << endl;
+            uint32_t cur_cluster = clusterOfSector(sdfat, first_sector);
+            // # of clusters to advance
+            uint32_t num_clusters = _sector_index / sec_per_cluster;
+            for (uint32_t i = 0; i < num_clusters; ++i) {
+                if (!sdfat->dbgFat(cur_cluster, &cur_cluster)) {
+                    *sector_out = 0;
+                    *num_sectors_out = 0;
+                    return;
+                }
+            }
 
-        goto err;
-
-        // *sector_out = _sd->dataStartSector() + 
+            *sector_out = clusterStartSector(sdfat, cur_cluster) + ((first_sector + _sector_index) % sec_per_cluster);
+            *num_sectors_out = max(0, min(sec_per_cluster, _max_sectors));
+        } else {
+            cout << F("Unsupported FAT type: ") << endl;
+            _sd->printFatType(&Serial);
+            goto err;
+        }
     }
 
     return;
@@ -276,6 +297,9 @@ bool WavePlayer::read_and_convert(int16_t **samples, uint32_t *num_samples) {
     _end_read_chunk();
 
     _sector_index += ns;
+    if (_loop && _sector_index >= ((_file->fileSize() + SD_SECTOR_SIZE - 1) / SD_SECTOR_SIZE)) {
+        _sector_index = 0;
+    }
 
     // TODO handle partial sectors, e.g. EOF
     *samples = reinterpret_cast<int16_t*>(_dma_rx_bufs[0]);

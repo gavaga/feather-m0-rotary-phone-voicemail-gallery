@@ -16,11 +16,12 @@ void fatal(const char *message, uint8_t r, uint8_t g, uint8_t b, uint16_t blink_
 
 void initSD();
 
+void allocate_dac_dma();
 void setup_dac_dma();
 void startTimer(int frequencyHz);
 void dma_dac_callback(Adafruit_ZeroDMA *dma);
 
-void start_playing(const char *filename);
+void start_playing(const char *filename, bool loop);
 bool tick();
 bool should_tick();
 void play(const char *filename);
@@ -84,6 +85,7 @@ volatile uint64_t last_fall_time = 0;
 volatile bool up = false;
 
 volatile bool stop_playing = false;
+volatile bool is_playing = true;
 
 #define PULSE_TIMEOUT 350000
 #define PULSE_WIDTH_MIN 30000
@@ -136,11 +138,17 @@ void setup() {
   // configure DAC
   analogWriteResolution(DAC_BITS);
   initSD();
+  allocate_dac_dma();
 
-  play(dialtone_filename);
+  // loop dialtone until interrupted by dialing
+  start_playing(dialtone_filename, true);
 }
 
 void loop() {
+  if (is_playing && should_tick()) {
+    tick();
+  }
+
   if (last_tick_time > 0 && ticks > 0 && micros() - last_tick_time > PULSE_TIMEOUT) {
     cout << F("Dialed: ") << (uint32_t)ticks << endl;
     number_filename[dial_index++] = (char)('0' + (ticks % 10));
@@ -148,65 +156,26 @@ void loop() {
 
     if (dial_index == 2) {
       dial_index = 0;
-      play(number_filename);
+      start_playing(number_filename, false);
     }
   }
 }
 
-void play(const char *filename) {
+void play(const char *filename, bool loop) {
   stop_playing = false;
 
-  cout << F("Playing file: ") << filename << endl;
-  // open the file
-  if (!file.open(filename, FILE_READ)) {
-    fatal("File doesn't exist", 255, 0, 0, 1000);
-  }
+  start_playing(filename, loop);
 
-  if (!player.init()) {
-    fatal("Error initializing waveplaer", 255, 0, 0, 500);
-  }
+  while (true) {
+    // wait until ready for a tick
+    while(!should_tick()) yield();
 
-  if (player.status() == WavePlayerStatus::ERROR) {
-    fatal("Error initializing waveplayer", 255, 0, 0, 500);
-  }
-
-  cout << F("Initialized WavePlayer") << endl;
-
-  int16_t *samples;
-  uint32_t num_samples; 
-  if (!player.start(&sd, &file, &samples, &num_samples)) {
-    fatal("Error starting wav file", 255, 0, 0, 500);
-  }
-
-  cout << F("Starting playback of ") << num_samples << F(" from ") << hex << samples << dec << endl;
-
-  // enqueue the next audio playback
-  audio_samples_ptr = samples;
-  next_num_samples = num_samples;
-  
-  startTimer(SAMPLE_RATE);
-  setup_dac_dma();
-
-  // actually start playback
-  dma_dac.startJob();
-
-  while (num_samples > 0) {
-    uint64_t time = micros();
-    if (!player.read_and_convert(&samples, &num_samples)) {
+    if (!tick()) {
+      cout << F("Finished playback") << endl;
       break;
     }
-    time = micros() - time;
-    // cout << F("Read ") << num_samples << F(" samples in ") << time << F(" us") << endl;
-
-    // enqueue the next sample chunk and continue right into the next read
-    noInterrupts();
-    audio_samples_ptr = samples;
-    next_num_samples = num_samples;
-    interrupts();
-
-    // wait until the command is latched by the DMA routine
-    while (next_num_samples > 0) yield();
-
+    
+    // DMA will stop automatically if we don't feed it a new command
     if (stop_playing) {
       cout << F("Interrupted playback") << endl;
       break;
@@ -214,7 +183,7 @@ void play(const char *filename) {
   }
 }
 
-void start_playing(const char *filename) {
+void start_playing(const char *filename, bool loop) {
   stop_playing = false;
 
   cout << F("Playing file: ") << filename << endl;
@@ -235,7 +204,7 @@ void start_playing(const char *filename) {
 
   int16_t *samples;
   uint32_t num_samples; 
-  if (!player.start(&sd, &file, &samples, &num_samples)) {
+  if (!player.start(&sd, &file, loop, &samples, &num_samples)) {
     fatal("Error starting wav file", 255, 0, 0, 500);
   }
 
@@ -250,6 +219,8 @@ void start_playing(const char *filename) {
 
   // actually start playback
   dma_dac.startJob();
+
+  is_playing = true;
 }
 
 bool tick() {
@@ -265,13 +236,15 @@ bool tick() {
     return false;
   }
   time = micros() - time;
-  cout << F("Read ") << num_samples << F(" samples in ") << time << F(" us") << endl;
+  //cout << F("Read ") << num_samples << F(" samples in ") << time << F(" us") << endl;
 
   // enqueue the next sample chunk and continue right into the next read
   noInterrupts();
   audio_samples_ptr = samples;
   next_num_samples = num_samples;
   interrupts();
+
+  return num_samples > 0;
 }
 
 bool should_tick() {
@@ -319,6 +292,15 @@ void initSD() {
 }
 
 void setup_dac_dma() {
+  dma_dac.abort();
+
+  dma_dac.changeDescriptor(dmac_dac_tx,
+    (void*)audio_samples_ptr,
+    (void*)(&DAC->DATA.reg),
+    next_num_samples);
+}
+
+void allocate_dac_dma() {
   while (DAC->STATUS.bit.SYNCBUSY == 1);
   DAC->DATA.reg = 0;
   DAC->CTRLA.bit.ENABLE = 1;
@@ -408,6 +390,7 @@ void dma_dac_callback(Adafruit_ZeroDMA *dma) {
 
   // actually stop playback if there are no more samples to play
   if (num_samples == 0) {
+    is_playing = false;
     return;
   }
 
