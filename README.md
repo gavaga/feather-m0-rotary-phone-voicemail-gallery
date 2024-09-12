@@ -38,7 +38,9 @@ then wait for the `DATA_START_SECTOR` marker `0xFE`. Then we trigger the DMA, wh
 
 ## Audio Playback
 
-Timer-triggered DMA is very important for accurate audio playback, as any approach using the CPU is prone to jitter and drift. As such, we configure the `TC5` timer on the SAMD21 to overflow every 1/44.1k seconds, and we allocate and configure a DMA channel to use that timer overflow as a trigger for a single beat. See [AudioPlayer.cpp](./src/AudioPlayer.cpp) for details.
+For audio playback the Feather M0 has a built-in 12-bit DAC on pin A0, which is perfectly adequate for our purposes. This signal is fed into a PAM8302A 2.5W mono audio amp. This amp is not super well-suited to the ~45 Ohm speaker that came with the vintage rotary phone, but with the volume adequately tuned it worked fine. It ended up being _very_ finnicky to tune with the trim pot though, as the bottom 25% of the trim pot would give me no sound at all, and the top 50% of the trim pot's range would draw too much current and shut off the microcontroller, though fortunately that narrow band still made it plenty loud for near-ear use.
+
+Timer-triggered DMA is very important for accurate audio playback, as any approach using the CPU is prone to jitter and drift. As such, we configure the `TC5` timer on the SAMD21 to overflow every 1/44.1k seconds, and we allocate and configure a DMA channel to use that timer overflow as a trigger for a single beat, which copies a sample from the sample buffer to the DAC register (pin A0). See [AudioPlayer.cpp](./src/AudioPlayer.cpp) for details.
 
 For playback we use a 16-bit DMA that copies from the converted sample buffer. We use a buffer-swap strategy for streaming, so while the playback DMA is playing one buffer, we are reading and converting the next set of samples into the second buffer. We rely on the SD card reading being faster than playback for streaming to be successful--if the playback of a buffer finishes without us having enqueue another chunk converted, playback will end. 
 
