@@ -271,6 +271,9 @@ bool WavePlayer::read_and_convert(int16_t **samples, uint32_t *num_samples) {
     // if there are no more sectors left to read in the file, indicate that the playback should stop
     if (ns == 0) return false;
 
+    // if we're starting from sector 0, then we need to skip the header. this happens when we are looping
+    uint32_t skip_bytes = _sector_index == 0 ? sizeof(WaveFileHeader) : 0;
+
     // start a DMA for that sector
     if (!_start_read_chunk(sector, ns)) {
         cout << F("WavePlayer: Failed to read chunk, aborting") << endl;
@@ -302,8 +305,8 @@ bool WavePlayer::read_and_convert(int16_t **samples, uint32_t *num_samples) {
     }
 
     // TODO handle partial sectors, e.g. EOF
-    *samples = reinterpret_cast<int16_t*>(_dma_rx_bufs[0]);
-    *num_samples = (ns * SD_SECTOR_SIZE) / 2;
+    *samples = reinterpret_cast<int16_t*>(&_dma_rx_bufs[0][skip_bytes]);
+    *num_samples = (ns * SD_SECTOR_SIZE - skip_bytes) / 2;
     return true;
 
 err:

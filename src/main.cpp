@@ -1,3 +1,5 @@
+#define DEBUG 0
+
 #include <Arduino.h>
 #include <sdios.h>
 
@@ -42,29 +44,33 @@ void stop();
 
 #define DIALER_PIN A1
 
-// GLOBALS
-// Adafruit_NeoPixel neopixel_err(1, NEOPIXEL_BUILTIN, NEO_GRB + NEO_KHZ800);
-
-WavePlayer player(SD_SECTOR_SIZE *NUM_SECTORS);
-
-SdFs sd;
-FsFile file;
-
+// Filenames + digit templates
 const char *DIALTONE_FILENAME = "dialtone.wav";
 const char *RING_FILENAME = "ring.wav";
 const char *RING_REMIX_FILENAME = "ringremix.wav";
 
-int32_t dial_index = 0;
 char number_filename[7] = "00.WAV";
+
+const char *INTERCEPT_PRE = "JB-pre.WAV";
+const char *INTERCEPT_POST = "JB-post.WAV";
+char intercept_digits[2][17] = { "JB-X-neutral.WAV", "JB-X-falling.WAV" };
+
+// GLOBALS
+// Adafruit_NeoPixel neopixel_err(1, NEOPIXEL_BUILTIN, NEO_GRB + NEO_KHZ800);
+WavePlayer player(SD_SECTOR_SIZE *NUM_SECTORS);
+
+SdFs sd;
+FsFile file;
+int32_t dial_index = 0;
 
 typedef struct {
     const char *filename;
     bool loop;
 } AudioQueueItem;
 
-const uint32_t MAX_QUEUE_LEN = 3;
+#define MAX_QUEUE_LEN 5
 uint32_t audio_index, audio_tracks;
-AudioQueueItem audio_queue[3];
+AudioQueueItem audio_queue[MAX_QUEUE_LEN];
 
 // ------------------------------------------------------------------------------
 void setup()
@@ -78,10 +84,13 @@ void setup()
 
     // configure serial
     Serial.begin(115200);
+
+#if DEBUG
     // wait for serial monitor to connect
     while (!Serial) {
         yield();
     }
+#endif
 
     initSD();
 
@@ -112,15 +121,25 @@ void loop() {
     if (Dialer.check_dialed(&dialed_number))
     {
         cout << F("Dialed: ") << dialed_number << endl;
-        number_filename[dial_index++] = (char)('0' + (dialed_number % 10));
+        number_filename[dial_index] = intercept_digits[dial_index][3] = (char)('0' + (dialed_number % 10));
+        dial_index++;
 
         stop();
 
         if (dial_index == 2) {
             dial_index = 0;
-            enqueue(RING_FILENAME, false);
-            enqueue(number_filename, false);
-            enqueue(DIALTONE_FILENAME, true);
+
+            if (sd.exists(number_filename)) {
+                enqueue(RING_FILENAME, false);
+                enqueue(number_filename, false);
+                enqueue(DIALTONE_FILENAME, true);
+            } else {
+                enqueue(INTERCEPT_PRE, false);
+                enqueue(intercept_digits[0], false);
+                enqueue(intercept_digits[1], false);
+                enqueue(INTERCEPT_POST, false);
+                enqueue(DIALTONE_FILENAME, true);
+            }
         }
     }
 }
