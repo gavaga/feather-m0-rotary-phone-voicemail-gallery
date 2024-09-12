@@ -1,5 +1,7 @@
 # Rotary Phone Voicemail Gallery
 
+![Photo of the phone and stand](./photos/20240908_235905.jpg)
+
 Dependencies:
 - Sdfat - Adafruit Fork
 - Adafruit Zero DMA Library
@@ -55,3 +57,9 @@ Currently this code is limited to 44.1k Mono 16-bit PCM WAV files, but it would 
 I used the original dialer from the vintage rotary phone. The mechanism is an electrical contact which is interrupted for each digit. So dialing a 1 will create a single pulse of roughly 60ms, a 2 will be 2 pulses of roughly 60ms separated by some 30-60ms.
 
 I passed 5V through the switch, and used a 10k pulldown resistor to ground on pin A1--normally the pin is high, but when the switch is interrupted, the pin is pulled low by the pulldown. I originally set this up using interrupts on that pin to detect changes, but I found that to be incredibly noisy and quite challenging to effectively debounce. Given the timings involved are pretty huge and not critical, this was also way overkill, so I just switched to a CPU approach to detect pulses and a timeout for detecing when the pulses for a dial have finished, and this worked great.  
+
+## Photos
+
+![Unadulterated phone interior](./photos/20240820_181335.jpg)
+
+![Breadboard setup](./photos/20240903_020230.jpg)
